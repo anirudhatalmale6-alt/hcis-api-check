@@ -61,6 +61,21 @@ try {
     $s2 = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($b2)
 
     if ($s1 -ne $s2)     { Say ''; Say 'They do not match. Nothing changed.' 'Red'; Read-Host | Out-Null; exit 1 }
+
+    # Describe what was actually typed WITHOUT showing it. If a symbol arrives
+    # differently here than in the browser - keyboard layout, an AltGr key -
+    # this is where it becomes visible, because the length or the character
+    # mix will not be what the user expects.
+    $letters = ($s1.ToCharArray() | Where-Object { [char]::IsLetter($_) }).Count
+    $digits  = ($s1.ToCharArray() | Where-Object { [char]::IsDigit($_) }).Count
+    $others  = $s1.Length - $letters - $digits
+    Say ''
+    Say ("What you typed: $($s1.Length) characters - $letters letters, $digits digits, $others symbols.") 'Cyan'
+    if ($others -gt 0) {
+        Say 'It contains symbols. If sign-in fails afterwards, try again with' 'Yellow'
+        Say 'letters and numbers only - symbols can arrive differently from a' 'Yellow'
+        Say 'console than from a browser on some keyboard layouts.' 'Yellow'
+    }
     if ($s1.Length -lt 8){ Say ''; Say 'Too short - at least 8 characters. Nothing changed.' 'Red'; Read-Host | Out-Null; exit 1 }
     if ($s1 -match "'")  { Say ''; Say "Please avoid the ' character. Nothing changed." 'Red'; Read-Host | Out-Null; exit 1 }
 
@@ -103,7 +118,9 @@ UPDATE system_users
         if ($key) { $hh['apikey'] = $key; $hh['Authorization'] = "Bearer $key" }
         $apiOk = $false
         try {
-            $rr = Invoke-WebRequest -Uri 'http://localhost:3000/rpc/hcis_login' -Method POST -Headers $hh `
+            # The BROWSER's url, not the :3000 shortcut. Verifying on a path the
+            # user does not use proves nothing about the user's experience.
+            $rr = Invoke-WebRequest -Uri 'http://localhost/rest/v1/rpc/hcis_login' -Method POST -Headers $hh `
                      -Body (@{ p_identifier = $who; p_password = $s1 } | ConvertTo-Json -Compress) `
                      -UseBasicParsing -TimeoutSec 20
             if ($rr.Content -notmatch '\[\s*\]') { $apiOk = $true }
