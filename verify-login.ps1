@@ -57,6 +57,36 @@ Say 'databases that exist on this server:'
 'select datname from pg_database where datistemplate = false order by 1;' |
     & $psql -U postgres -d postgres -At -f - 2>&1 | ForEach-Object { Say ('   ' + $_) }
 
+# ---------- D. WHICH FOLDER DOES IIS ACTUALLY SERVE ----------
+# The earlier scan found web.config in TWO places:
+#   C:\HCIS\wwwroot\web.config
+#   C:\HCIS\deploy\HCIS_staging\wwwroot\web.config
+# STEP 3 deployed into C:\HCIS\wwwroot. If IIS actually serves the other one,
+# the new build went somewhere nobody is looking, and the browser is still
+# running the old code against whatever config.js sits beside it.
+Say ''
+Say '--- D. which folder is IIS really serving ---' 'Cyan'
+$appcmd = Join-Path $env:windir 'system32\inetsrv\appcmd.exe'
+if (Test-Path -LiteralPath $appcmd) {
+    & $appcmd list site 2>&1 | ForEach-Object { Say ('   ' + $_) }
+    Say ''
+    & $appcmd list vdir 2>&1 | ForEach-Object { Say ('   ' + $_) }
+    Say ''
+    Say '   is the URL Rewrite / proxy module present?'
+    $arr = & $appcmd list module 2>&1 | Select-String -Pattern 'Rewrite|ApplicationRequestRouting|Proxy'
+    if ($arr) { $arr | ForEach-Object { Say ('   ' + $_.ToString().Trim()) } }
+    else { Say '   NO rewrite module listed - that alone would break /rest/v1/' 'Red' }
+} else { Say '   appcmd not found - is IIS installed on this box?' 'Yellow' }
+
+Say ''
+Say '   index.html timestamps (which copy is the new build?)'
+foreach ($p in @('C:\HCIS\wwwroot\index.html','C:\HCIS\deploy\HCIS_staging\wwwroot\index.html')) {
+    if (Test-Path -LiteralPath $p) {
+        $i = Get-Item -LiteralPath $p
+        Say ('   ' + $i.LastWriteTime.ToString('yyyy-MM-dd HH:mm') + '  ' + $p)
+    } else { Say ('   (missing) ' + $p) 'Yellow' }
+}
+
 # ---------- ask for the credentials ----------
 Say ''
 $who = Read-Host 'Username you are trying'
