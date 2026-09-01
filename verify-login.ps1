@@ -43,7 +43,12 @@ $conf = 'C:\HCIS\postgrest\postgrest.conf'
 if (Test-Path -LiteralPath $conf) {
     $line = (Get-Content -LiteralPath $conf | Where-Object { $_ -match 'db-uri' } | Select-Object -First 1)
     # Mask ONLY the password between ':' and '@'. Keep host/port/database.
+    # Two config formats exist and I only handled one. This conf uses
+    # keyword=value (password=...), not the URI form, so my URI-only regex
+    # printed the password in full. Mask BOTH, and mask up to the next key=
+    # so quoted values and values with spaces cannot slip past either.
     $shown = [regex]::Replace($line, '(://[^:/@\s]+:)[^@\s]+(@)', '$1********$2')
+    $shown = [regex]::Replace($shown, '(?i)(\bpassword\s*=\s*).*?(?=(\s+[A-Za-z_]+\s*=)|"?\s*$)', '$1********')
     Say ('PostgREST is configured with: ' + $shown) 'Yellow'
 } else { Say 'postgrest.conf not found' 'Red' }
 Say 'My scripts have been using:  database hcis_db, user postgres, on this machine'
