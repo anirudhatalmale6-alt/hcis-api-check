@@ -82,9 +82,42 @@ UPDATE system_users
     Say $res.Trim()
 
     if ($res -match 'UPDATE 1') {
+        # "UPDATE 1" only proves a row changed. It does NOT prove the new
+        # password works - last time I reported success on that alone and the
+        # sign-in still failed. So prove it, both ways, before saying done.
         Say ''
-        Say "Done. $who can sign in with the new password now." 'Green'
-        Say 'It will not ask you to change it again on the way in.' 'Green'
+        Say 'Checking it actually works...' 'Cyan'
+
+        $vq = "select (password_hash = crypt('$s1', password_hash)) as stored_ok from system_users where username = '$($who -replace "'","''")';"
+        $vr = ($vq | & $psql -U postgres -d hcis_db -At -f - 2>&1 | Out-String).Trim()
+        if ($vr -match '^t') { Say '   the database accepts this password.' 'Green' }
+        else { Say '   the database does NOT accept it - something mangled it.' 'Red' }
+
+        $key = ''
+        $cfgp = 'C:\HCIS\wwwroot\config.js'
+        if (Test-Path -LiteralPath $cfgp) {
+            $mm = [regex]::Match((Get-Content -Raw -LiteralPath $cfgp), "supabaseKey:\s*'([^']+)'")
+            if ($mm.Success) { $key = $mm.Groups[1].Value }
+        }
+        $hh = @{ 'Content-Type' = 'application/json' }
+        if ($key) { $hh['apikey'] = $key; $hh['Authorization'] = "Bearer $key" }
+        $apiOk = $false
+        try {
+            $rr = Invoke-WebRequest -Uri 'http://localhost:3000/rpc/hcis_login' -Method POST -Headers $hh `
+                     -Body (@{ p_identifier = $who; p_password = $s1 } | ConvertTo-Json -Compress) `
+                     -UseBasicParsing -TimeoutSec 20
+            if ($rr.Content -notmatch '\[\s*\]') { $apiOk = $true }
+        } catch { }
+        if ($apiOk) { Say '   the website API accepts this sign-in.' 'Green' }
+        else { Say '   the API still refuses it - tell me, this is not your typing.' 'Red' }
+
+        Say ''
+        if ($vr -match '^t' -and $apiOk) {
+            Say "Done, and PROVEN. $who can sign in with this password now." 'Green'
+        } else {
+            Say 'The password was stored but did not pass both checks above.' 'Yellow'
+            Say 'Send me a photo of this window rather than trying to sign in.' 'Yellow'
+        }
     } else {
         Say ''
         Say 'That did not report UPDATE 1 - tell me what it says above.' 'Red'
