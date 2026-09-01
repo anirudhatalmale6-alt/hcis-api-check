@@ -91,24 +91,35 @@ select username,
     $h = @{ 'Content-Type' = 'application/json' }
     if ($key) { $h['apikey'] = $key; $h['Authorization'] = "Bearer $key" }
     $body = @{ p_identifier = $who; p_password = $pw } | ConvertTo-Json -Compress
-    try {
-        $r = Invoke-WebRequest -Uri 'http://localhost:3000/rpc/hcis_login' -Method POST `
-                               -Headers $h -Body $body -UseBasicParsing -TimeoutSec 20
-        $out = $r.Content
-        # never print a session token
-        $out = [regex]::Replace($out, '"token"\s*:\s*"[^"]*"', '"token":"<hidden>"')
-        if ($out -match '\[\s*\]') {
-            Say '   The API returned an EMPTY result - it refused the sign-in.' 'Red'
-        } else {
-            Say '   The API ACCEPTED it. Sign-in works at the API level.' 'Green'
-            Say ('   ' + $out.Substring(0, [Math]::Min(300, $out.Length)))
+
+    # TWO paths, because they are not the same path. My earlier test went
+    # straight to PostgREST on port 3000. The BROWSER does not - it goes to
+    # http://localhost/rest/v1/... and IIS rewrites that to port 3000. If the
+    # direct one works and the browser one does not, the fault is IIS routing
+    # and has nothing to do with the password.
+    foreach ($t in @(
+        @{ name = 'direct to PostgREST (port 3000)'; url = 'http://localhost:3000/rpc/hcis_login' },
+        @{ name = 'through IIS, as the browser does'; url = 'http://localhost/rest/v1/rpc/hcis_login' }
+    )) {
+        Say ''
+        Say ('   -> ' + $t.name)
+        try {
+            $r = Invoke-WebRequest -Uri $t.url -Method POST -Headers $h -Body $body `
+                                   -UseBasicParsing -TimeoutSec 20
+            $out = [regex]::Replace($r.Content, '"token"\s*:\s*"[^"]*"', '"token":"<hidden>"')
+            if ($out -match '\[\s*\]') {
+                Say '      REFUSED - empty result (wrong password, as far as this path is concerned)' 'Red'
+            } else {
+                Say '      ACCEPTED - a real sign-in came back' 'Green'
+            }
+        } catch {
+            $resp = $_.Exception.Response
+            if ($resp) {
+                $code = [int]$resp.StatusCode
+                $sr = New-Object IO.StreamReader($resp.GetResponseStream())
+                Say ("      HTTP $code - " + $sr.ReadToEnd()) 'Red'
+            } else { Say ('      could not reach it: ' + $_.Exception.Message) 'Red' }
         }
-    } catch {
-        $resp = $_.Exception.Response
-        if ($resp) {
-            $sr = New-Object IO.StreamReader($resp.GetResponseStream())
-            Say ('   API said: ' + $sr.ReadToEnd()) 'Red'
-        } else { Say ('   Could not reach the API: ' + $_.Exception.Message) 'Red' }
     }
 } finally {
     [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($b)
