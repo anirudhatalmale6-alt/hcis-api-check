@@ -25,6 +25,8 @@ function Clean([string]$t) {
     # jwt-secret signs every session token - it must never reach a screenshot.
     $t = [regex]::Replace($t, '(?im)^(\s*jwt-secret\s*=\s*).*$', '$1<masked>')
     $t = [regex]::Replace($t, '(?i)((?:secret|api-?key)\s*[:=]\s*)\S+', '$1********')
+    # keyword=value connection strings: password=... up to the next key=
+    $t = [regex]::Replace($t, '(?i)(\bpassword\s*=\s*).*?(?=(\s+[A-Za-z_]+\s*=)|"?\s*$)', '$1********')
     # any JWT-shaped token, wherever it turns up
     $t = [regex]::Replace($t, 'eyJ[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]+', '<token-masked>')
     return $t
