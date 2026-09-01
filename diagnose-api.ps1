@@ -49,13 +49,39 @@ Say '--- 2. the files ---' 'Cyan'
 foreach ($p in @('C:\HCIS','C:\HCIS\postgrest','C:\HCIS\wwwroot')) {
     if (Test-Path -LiteralPath $p) { Say ("EXISTS  " + $p) } else { Say ("MISSING " + $p) 'Yellow' }
 }
-$exe = Get-ChildItem -Path 'C:\' -Filter 'postgrest.exe' -Recurse -ErrorAction SilentlyContinue -Force |
-       Select-Object -First 3
+# Look where it should be FIRST. The previous version searched the whole of
+# C: every time, which sat silently for minutes on a box where the answer was
+# always going to be in C:\HCIS\postgrest. Only fall back to a wide search if
+# the obvious places come up empty.
+$exe = @()
+foreach ($guess in @('C:\HCIS\postgrest\postgrest.exe','C:\HCIS\postgrest.exe','C:\postgrest\postgrest.exe')) {
+    if (Test-Path -LiteralPath $guess) { $exe += Get-Item -LiteralPath $guess }
+}
+if (-not $exe) {
+    Say 'not in the usual places - searching C:\HCIS...' 'Yellow'
+    $exe = Get-ChildItem -Path 'C:\HCIS' -Filter 'postgrest.exe' -Recurse -ErrorAction SilentlyContinue -Force |
+           Select-Object -First 3
+}
+if (-not $exe) {
+    Say 'still not found - searching the whole drive, this takes a few minutes...' 'Yellow'
+    $exe = Get-ChildItem -Path 'C:\' -Filter 'postgrest.exe' -Recurse -ErrorAction SilentlyContinue -Force |
+           Select-Object -First 3
+}
 if ($exe) { $exe | ForEach-Object { Say ("postgrest.exe -> " + $_.FullName) 'Green' } }
 else { Say 'postgrest.exe was NOT FOUND anywhere on C: - that would explain everything' 'Red' }
 
-$conf = Get-ChildItem -Path 'C:\HCIS' -Include '*.conf','*.config' -Recurse -ErrorAction SilentlyContinue |
-        Select-Object -First 5
+# PostgREST's config, specifically. The previous version took the first
+# *.conf OR *.config it found and got C:\HCIS\deploy\...\wwwroot\web.config -
+# an IIS file - then tried to start PostgREST with it. That produces a failure
+# that has nothing to do with the real fault. web.config is never PostgREST's.
+$conf = @()
+foreach ($guess in @('C:\HCIS\postgrest\postgrest.conf','C:\HCIS\postgrest.conf')) {
+    if (Test-Path -LiteralPath $guess) { $conf += Get-Item -LiteralPath $guess }
+}
+if (-not $conf) {
+    $conf = Get-ChildItem -Path 'C:\HCIS' -Filter '*.conf' -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -ne 'web.config' } | Select-Object -First 5
+}
 if ($conf) { $conf | ForEach-Object { Say ("config -> " + $_.FullName) 'Green' } }
 else { Say 'no .conf file found under C:\HCIS' 'Yellow' }
 
@@ -83,6 +109,17 @@ if ($conf) {
     Get-Content -LiteralPath $c0 -ErrorAction SilentlyContinue |
         Select-Object -First 25 | ForEach-Object { SayClean $_ }
 } else { Say 'skipped - no config file found' 'Yellow' }
+
+# ---------- 4b. what the start script actually does ----------
+# The scheduled task runs this file and Windows reports 0xC0000142. Its
+# contents are the missing piece - a relative path here behaves completely
+# differently when Task Scheduler runs it as SYSTEM with no working folder.
+Say ''
+Say '--- 4b. start-postgrest.bat ---' 'Cyan'
+if (Test-Path -LiteralPath $bat) {
+    Get-Content -LiteralPath $bat -ErrorAction SilentlyContinue |
+        Select-Object -First 30 | ForEach-Object { SayClean ('   ' + $_) }
+} else { Say 'not present' 'Yellow' }
 
 # ---------- 5. START IT IN THE OPEN AND CATCH THE ERROR ----------
 Say ''
